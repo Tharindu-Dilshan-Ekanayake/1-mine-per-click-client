@@ -60,9 +60,12 @@ export function Stall({ label, icon, awning, x, z, rotY = 0, npc = {} }) {
         {/* Counter */}
         <Block pos={[0, 0.7, 1.4]} size={[6, 1.4, 1]} color={WOOD} />
         <Block pos={[0, 1.5, 1.4]} size={[6.4, 0.2, 1.3]} color={WOOD_DARK} />
-        {/* Back + posts */}
+        {/* Back + corner posts */}
         <Block pos={[0, 1.2, -1.6]} size={[6, 2.4, 0.4]} color={WOOD} />
-        {[-2.9, 2.9].flatMap((px) =>
+        {/* Flush against the counter/back-wall's own edge (half-width 3), not
+            inset past it - at 2.9 the posts sank slightly into both, and the
+            two different-coloured blocks fought over the overlapping faces. */}
+        {[-3.2, 3.2].flatMap((px) =>
           [-1.6, 1.6].map((pz) => (
             <Block key={`${px}${pz}`} pos={[px, 2, pz]} size={[0.4, 4, 0.4]} color={WOOD_DARK} />
           )),

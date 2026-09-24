@@ -101,7 +101,6 @@ export const Character = forwardRef(function Character(
     pickaxe = 'wood',
     aura = 'none',
     name,
-    tagRef,
     bag,
     equipped,
     proportions,
@@ -190,11 +189,9 @@ export const Character = forwardRef(function Character(
       </group>
       {name !== undefined && (
         <Html position={[0, height + 0.75, 0]} center distanceFactor={7} zIndexRange={[6, 0]}>
+          {/* Just the name - strength/level is on the HUD, not floating over every head. */}
           <div className="name-tag">
             <div className="name-tag-name">{name}</div>
-            <div className="name-tag-str">
-              💪 <span ref={tagRef}>0</span>
-            </div>
           </div>
         </Html>
       )}

@@ -4,7 +4,7 @@ import { Quaternion, Vector3 } from 'three'
 
 import { useGame } from '../net/gameStore'
 import { getRoom } from '../net/network'
-import { ITEMS_BY_ID, bagCapacity, fmt, levelInfo } from '../shared/gameConfig'
+import { ITEMS_BY_ID, bagCapacity } from '../shared/gameConfig'
 import Character from './Character'
 import { remoteMotions } from './remoteActs'
 import { PLAYER_HEIGHT } from './Player'
@@ -26,7 +26,6 @@ function parseAvatar(json) {
 const RemotePlayer = memo(function RemotePlayer({ id }) {
   const groupRef = useRef()
   const visualRef = useRef()
-  const tagRef = useRef()
   const placed = useRef(false)
   const motionRef = useRef({ time: 0, speed: 0, grounded: true, maxSpeed: 7, swingT: null })
 
@@ -85,8 +84,6 @@ const RemotePlayer = memo(function RemotePlayer({ id }) {
     motion.speed = Number.isFinite(p.spd) ? p.spd : 0
     motion.grounded = !p.air
 
-    if (tagRef.current) tagRef.current.textContent = `${fmt(p.strength)}  ·  Lv ${levelInfo(p.strength).level}`
-
     const bagKinds = p.bag.map((b) => b.kind).join(',')
     if (
       p.pickaxe !== look.pickaxe ||
@@ -118,7 +115,6 @@ const RemotePlayer = memo(function RemotePlayer({ id }) {
           pickaxe={look.pickaxe}
           aura={look.aura}
           name={look.name}
-          tagRef={tagRef}
           bag={bag}
           equipped={equipped}
         />
