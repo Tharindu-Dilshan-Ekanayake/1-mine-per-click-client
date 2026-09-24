@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 
 import { interact } from '../game/interact'
+import { isTouchDevice } from '../game/touchInput'
+import TouchControls from '../game/TouchControls'
 import { isMuted, onMuteChange, setMuted, sfx } from '../game/sound'
-import { lockPointer } from '../game/view'
 import { getGame, useGame } from '../net/gameStore'
 import { send } from '../net/network'
 import {
@@ -282,7 +283,8 @@ function RightPanel({ me }) {
 
 /** Three rotating quests with progress bars; finished ones can be claimed. */
 function Quests({ me }) {
-  const open = useGame((s) => s.questsOpen ?? true)
+  // Collapsed by default on touch - portrait phones don't have room to spare.
+  const open = useGame((s) => s.questsOpen ?? !isTouchDevice)
   const setOpen = (v) => useGame.setState({ questsOpen: v })
   const ready = me.quests.filter((q) => q.progress >= q.target).length
   return (
@@ -341,8 +343,8 @@ function Prompt() {
   const modal = useGame((s) => s.modal)
   if (!prompt || modal) return null
   return (
-    <button type="button" className="prompt" onClick={interact}>
-      <span className="prompt-key">E</span>
+    <button type="button" className={`prompt ${isTouchDevice ? 'prompt-touch' : ''}`} onClick={interact}>
+      {!isTouchDevice && <span className="prompt-key">E</span>}
       <span className="game-text prompt-label">{prompt.label}</span>
     </button>
   )
@@ -382,19 +384,6 @@ function MuteButton() {
   )
 }
 
-/** "Click to play" reminder while the mouse is free (after Esc) and no menu is open. */
-function MouseHint() {
-  const started = useGame((s) => s.started)
-  const locked = useGame((s) => s.locked)
-  const modal = useGame((s) => s.modal)
-  if (!started || locked || modal) return null
-  return (
-    <button type="button" className="mouse-hint game-text" onClick={lockPointer}>
-      🖱 Click the game to look around · <KeyBadge k="Esc" /> frees the mouse
-    </button>
-  )
-}
-
 export function HUD() {
   const me = useGame((s) => s.me)
   return (
@@ -408,8 +397,8 @@ export function HUD() {
       <Toasts />
       <Floaters />
       <MuteButton />
-      <MouseHint />
       <Hotkeys />
+      {isTouchDevice && <TouchControls />}
     </div>
   )
 }

@@ -49,8 +49,6 @@ export const useGame = create((set, get) => ({
   avatarReady: false,
   /** The loading screen is done and the player is in the lobby. */
   started: false,
-  /** The mouse is captured by the game (cursor hidden, mouse turns the camera). */
-  locked: false,
 
   /** The most recent sale this session, { total } (the guide shows it). */
   lastSale: null,

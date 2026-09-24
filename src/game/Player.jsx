@@ -19,7 +19,6 @@ import {
   STALLS,
   barrierInfo,
   fmt,
-  levelInfo,
   pickaxeIndex,
   roomFloorY,
   speedMult,
@@ -30,6 +29,7 @@ import Character from './Character'
 import { interact } from './interact'
 import { localPlayer } from './localPlayer'
 import { sfx } from './sound'
+import { touchInput } from './touchInput'
 import useKeyboard from './useKeyboard'
 import { view } from './view'
 
@@ -66,6 +66,10 @@ const STALL_ACTIONS = {
   auras: 'Auras',
 }
 
+// Clamps to [-1, 1]: keyboard contributes exactly ±1, the touch joystick a
+// continuous amount, and both can be held at once.
+const clamp1 = (n) => Math.max(-1, Math.min(1, n))
+
 // Scratch objects, reused each frame so the loop allocates nothing.
 const _input = new Vector3()
 const _move = new Vector3()
@@ -83,7 +87,6 @@ export function Player({ position = [SPAWN.x, SPAWN.y + 2, SPAWN.z], onAvatarRea
   const localBodyRef = useRef(null)
   const bodyRef = externalBodyRef || localBodyRef
   const visualRef = useRef(null)
-  const tagRef = useRef(null)
   const keys = useKeyboard()
   const { rapier, world } = useRapier()
   const gl = useThree((s) => s.gl)
@@ -279,20 +282,23 @@ export function Player({ position = [SPAWN.x, SPAWN.y + 2, SPAWN.z], onAvatarRea
     const k = store.modal ? {} : keys.current
     const grounded = isGrounded()
 
-    // --- Turning: A/D swing the camera round, and the player turns with it ---------
-    const turn = (k.left ? 1 : 0) - (k.right ? 1 : 0)
+    // --- Turning: A/D (or the touch joystick's X axis) swing the camera round,
+    // and the player turns with it -----------------------------------------------
+    const touchOn = store.modal ? 0 : 1
+    const turn = clamp1((k.left ? 1 : 0) - (k.right ? 1 : 0) - touchInput.moveX * touchOn)
     if (turn) view.yaw += turn * TURN_SPEED * delta
     // Camera forward on the ground plane (the camera sits at +yaw, looking back).
     _camForward.set(-Math.sin(view.yaw), 0, -Math.cos(view.yaw))
 
-    // --- Walking: W/S along the camera's forward ----------------------------------
-    _input.set(0, 0, (k.backward ? 1 : 0) - (k.forward ? 1 : 0))
+    // --- Walking: W/S (or the joystick's Y axis) along the camera's forward --------
+    _input.set(0, 0, clamp1((k.backward ? 1 : 0) - (k.forward ? 1 : 0) + touchInput.moveY * touchOn))
     const linvel = body.linvel()
     const baseSpeed = MOVE_SPEED * speedMult(me?.speedLvl ?? 0)
 
     if (_input.z !== 0) {
       _move.copy(_camForward).multiplyScalar(-_input.z)
-      const speed = baseSpeed * (k.sprint ? SPRINT_MULTIPLIER : 1)
+      // A keyboard tap is always full speed; a light joystick push is slower.
+      const speed = baseSpeed * (k.sprint ? SPRINT_MULTIPLIER : 1) * Math.min(1, Math.abs(_input.z))
       body.setLinvel({ x: _move.x * speed, y: linvel.y, z: _move.z * speed }, true)
     } else {
       body.setLinvel({ x: linvel.x * 0.8, y: linvel.y, z: linvel.z * 0.8 }, true)
@@ -305,7 +311,7 @@ export function Player({ position = [SPAWN.x, SPAWN.y + 2, SPAWN.z], onAvatarRea
     }
 
     // --- Jump ----------------------------------------------------------------------
-    if (k.jump && jumpCooldown.current === 0 && grounded) {
+    if ((k.jump || (touchInput.jump && touchOn)) && jumpCooldown.current === 0 && grounded) {
       body.applyImpulse({ x: 0, y: JUMP_IMPULSE, z: 0 }, true)
       jumpCooldown.current = JUMP_COOLDOWN_S
       sfx.jump()
@@ -323,7 +329,7 @@ export function Player({ position = [SPAWN.x, SPAWN.y + 2, SPAWN.z], onAvatarRea
     } else {
       autoTimer.current = 0
     }
-    const wantSwing = holding.current || queuedClick.current || autoSwing
+    const wantSwing = holding.current || queuedClick.current || autoSwing || (touchInput.attack && touchOn)
     if (wantSwing && swingCooldown.current === 0 && !store.modal && me) {
       queuedClick.current = false
       autoTimer.current = 0
@@ -365,10 +371,6 @@ export function Player({ position = [SPAWN.x, SPAWN.y + 2, SPAWN.z], onAvatarRea
     if (pos.y < KILL_Y) {
       teleportTo(SPAWN.x, SPAWN.y + 1, SPAWN.z)
       send('surface')
-    }
-
-    if (tagRef.current && me) {
-      tagRef.current.textContent = `${fmt(me.strength)}  ·  Lv ${levelInfo(me.strength).level}`
     }
 
     // --- Network + surroundings, at a lower rate ----------------------------------
@@ -417,7 +419,6 @@ export function Player({ position = [SPAWN.x, SPAWN.y + 2, SPAWN.z], onAvatarRea
           pickaxe={pickaxe}
           aura={aura}
           name={name}
-          tagRef={tagRef}
           bag={bag}
           reportLoading
           onReady={onAvatarReady}

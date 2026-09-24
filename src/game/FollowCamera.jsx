@@ -3,7 +3,7 @@ import { useRapier } from '@react-three/rapier'
 import { useEffect, useRef } from 'react'
 import { Vector3 } from 'three'
 
-import { isPointerLocked, lockPointer, setLockTarget, view } from './view'
+import { view } from './view'
 
 /** How high above the player's origin the camera aims. */
 const LOOK_HEIGHT = 1.4
@@ -17,7 +17,6 @@ const MIN_PITCH = -0.15
 const MAX_PITCH = 1.25
 
 const DRAG_SENSITIVITY = 0.005
-const LOCKED_SENSITIVITY = 0.0028
 const ZOOM_SENSITIVITY = 0.01
 
 // Higher = snappier. Framerate-independent via the pow() smoothing below.
@@ -36,11 +35,13 @@ const clampPitch = (p) => Math.min(MAX_PITCH, Math.max(MIN_PITCH, p))
 /**
  * Third-person orbit camera.
  *
- * Trails the player's rigid body, easing both position and look-at target. With
- * the mouse captured (pointer lock) plain mouse movement orbits; without it,
- * right-click drag does. The wheel zooms, and A/D turn it (see Player). A ray
- * from the player's head pulls the camera in front of walls, which matters in
- * the narrow mine shafts, so this must be mounted inside <Physics>.
+ * Trails the player's rigid body, easing both position and look-at target.
+ * Only three things turn it: A/D (see Player), right-click-and-drag, and the
+ * wheel for zoom - plain mouse movement never does, even while the mouse is
+ * captured (pointer lock just hides the cursor and lets clicks reach the
+ * game; see view.js). A ray from the player's head pulls the camera in front
+ * of walls, which matters in the narrow mine shafts, so this must be mounted
+ * inside <Physics>.
  *
  * @param {{ bodyRef: React.MutableRefObject<any> }} props
  */
@@ -55,29 +56,28 @@ export function FollowCamera({ bodyRef }) {
   useEffect(() => {
     const el = gl.domElement
     if (!el) return
-    setLockTarget(el)
 
-    let dragging = false
+    // The one pointer currently orbiting the camera, if any - right mouse button
+    // on desktop, or a finger dragging the open part of the screen on touch
+    // (touch controls stop their own pointer events reaching the canvas, so any
+    // touch that does arrive here is a look-drag, not a joystick/button tap).
+    let dragId = null
     let lastX = 0
     let lastY = 0
 
     const onPointerDown = (e) => {
-      // Clicking the game captures the mouse again (e.g. after Esc).
-      if (e.button === 0 && !isPointerLocked()) lockPointer()
-      if (e.button !== 2) return // right button only
-      dragging = true
+      if (e.pointerType !== 'touch' && e.button !== 2) return // right button only
+      if (dragId !== null) return // one drag at a time
+      dragId = e.pointerId
       lastX = e.clientX
       lastY = e.clientY
       el.setPointerCapture?.(e.pointerId)
     }
 
     const onPointerMove = (e) => {
-      if (isPointerLocked()) {
-        view.yaw -= e.movementX * LOCKED_SENSITIVITY
-        view.pitch = clampPitch(view.pitch + e.movementY * LOCKED_SENSITIVITY)
-        return
-      }
-      if (!dragging) return
+      if (e.pointerId !== dragId) return
+      // Touch's movementX/Y support is inconsistent across browsers; a manual
+      // clientX/Y delta works everywhere, and is just as correct for the mouse.
       const dx = e.clientX - lastX
       const dy = e.clientY - lastY
       lastX = e.clientX
@@ -87,8 +87,8 @@ export function FollowCamera({ bodyRef }) {
     }
 
     const endDrag = (e) => {
-      if (!dragging) return
-      dragging = false
+      if (e.pointerId !== dragId) return
+      dragId = null
       el.releasePointerCapture?.(e.pointerId)
     }
 
@@ -102,7 +102,8 @@ export function FollowCamera({ bodyRef }) {
     const onContextMenu = (e) => e.preventDefault()
 
     el.addEventListener('pointerdown', onPointerDown)
-    // Locked mouse movement arrives on the document, not the canvas.
+    // On document, not the canvas: a drag that strays outside the canvas
+    // bounds (easy to do while orbiting) keeps tracking instead of stalling.
     document.addEventListener('pointermove', onPointerMove)
     el.addEventListener('pointerup', endDrag)
     el.addEventListener('pointercancel', endDrag)

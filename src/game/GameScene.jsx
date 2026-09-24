@@ -68,13 +68,17 @@ function Sun() {
       intensity={2.2}
       color="#fff6e5"
       shadow-mapSize={[tier.shadowSize, tier.shadowSize]}
-      shadow-camera-left={-35}
-      shadow-camera-right={35}
-      shadow-camera-top={35}
-      shadow-camera-bottom={-35}
+      shadow-camera-left={-tier.shadowArea}
+      shadow-camera-right={tier.shadowArea}
+      shadow-camera-top={tier.shadowArea}
+      shadow-camera-bottom={-tier.shadowArea}
       shadow-camera-near={1}
       shadow-camera-far={120}
-      shadow-bias={-0.0004}
+      // Tuned per tier: a smaller shadow map covers the same area with fewer
+      // texels, so it needs more bias to avoid self-shadowing "shadow acne" -
+      // flickering dark stripes on flat surfaces that read as z-fighting.
+      shadow-bias={tier.bias}
+      shadow-normalBias={tier.normalBias}
     />
   )
 }
@@ -117,16 +121,28 @@ function World({ playerBodyRef, onAvatarReady }) {
  * back up when there's headroom. After a few flip-flops it settles for good.
  */
 function AutoQuality() {
-  const { lower, raise, settle } = useQuality.getState()
   const settled = useQuality((s) => s.settled)
-  if (settled) return null
-  return <PerformanceMonitor onDecline={lower} onIncline={raise} flipflops={4} onFallback={settle} />
+  const { lower, raise, settle, setResFactor } = useQuality.getState()
+  return (
+    <PerformanceMonitor
+      // Continuous: eases the render resolution within the current tier every
+      // reading, so small dips smooth themselves out with no visible "quality
+      // drop". factor is drei's own 0-1 rolling estimate of headroom.
+      onChange={({ factor }) => setResFactor(factor)}
+      // Discrete: only after it's sure (flipflops), step shadows/effects too.
+      onDecline={settled ? undefined : lower}
+      onIncline={settled ? undefined : raise}
+      flipflops={4}
+      onFallback={settle}
+    />
+  )
 }
 
 export function GameScene() {
   const { game } = useBloxity()
   const tier = useQuality((s) => TIERS[s.tier])
-  const dpr = Math.min(window.devicePixelRatio || 1, tier.dpr)
+  const resFactor = useQuality((s) => s.resFactor)
+  const dpr = Math.min(window.devicePixelRatio || 1, tier.dprMin + (tier.dprMax - tier.dprMin) * resFactor)
   const playerBodyRef = useRef(null)
 
   const [avatarReady, setAvatarReady] = useState(false)

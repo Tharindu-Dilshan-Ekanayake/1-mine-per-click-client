@@ -18,7 +18,7 @@ const TIPS = [
   'Each stage needs a stronger pickaxe. Save up!',
   'A full backpack sends you home — buy a bigger bag.',
   'Press P for pickaxes, B for bags, U for upgrades.',
-  'Esc frees the mouse. Click the game to look around again.',
+  'A/D turns the camera. Hold right-click to look around freely.',
 ]
 
 function useFontsReady() {

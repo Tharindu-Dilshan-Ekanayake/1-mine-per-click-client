@@ -175,31 +175,16 @@ function PitRim() {
       <Block pos={[PIT.x, 0.12, pz1 + t / 2]} size={[s + 2 * t, 0.24, t]} color={RIM} />
       <Block pos={[px0 - t / 2, 0.12, PIT.z]} size={[t, 0.24, s]} color={RIM} />
       <Block pos={[px1 + t / 2, 0.12, PIT.z]} size={[t, 0.24, s]} color={RIM} />
-      <StartSign />
     </>
   )
 }
 
-function StartSign() {
-  const x = px0 - 4
-  const z = pz1 + 2
-  return (
-    <group position={[x, 0, z]} rotation={[0, 0.5, 0]}>
-      <Solid>
-        <Block pos={[-1.6, 1.6, 0]} size={[0.4, 3.2, 0.4]} color="#8a5a2b" />
-        <Block pos={[1.6, 1.6, 0]} size={[0.4, 3.2, 0.4]} color="#8a5a2b" />
-      </Solid>
-      <Block pos={[0, 3.6, 0]} size={[4.6, 1.8, 0.3]} color="#2d3a4f" />
-      <CanvasSign
-        position={[0, 3.6, 0.17]}
-        size={[4.4, 1.6]}
-        draw={(g, w, h) => drawGameText(g, 'Start Mining ⛏', w / 2, h / 2, h * 0.36, '#6bff3a')}
-      />
-    </group>
-  )
-}
-
-/** "Legendary / Mythic / Secret spawning in ..." board behind the pit. */
+/**
+ * The board behind the pit: "Start Mining" up top (no longer a separate
+ * signpost standing in the walking path - it used to have its own colliding
+ * posts right where players cross toward the pit) with the event timers
+ * ("Legendary / Mythic / Secret spawning in ...") below it.
+ */
 function TimerBoard() {
   const timers = useGame((s) => s.timers)
   const fmtT = (s) => `${Math.floor(s / 60)}m ${s % 60}s`
@@ -210,6 +195,14 @@ function TimerBoard() {
         <Block pos={[-7.6, 4, 0]} size={[0.8, 8, 0.8]} color="#6b5fb0" />
         <Block pos={[7.6, 4, 0]} size={[0.8, 8, 0.8]} color="#6b5fb0" />
       </Solid>
+      {/* "Start Mining" ribbon, mounted above the timer board rather than
+          standing in the path on its own posts. */}
+      <Block pos={[0, 9.55, 0]} size={[8, 1.5, 0.4]} color="#2d3a4f" />
+      <CanvasSign
+        position={[0, 9.55, 0.22]}
+        size={[7.6, 1.4]}
+        draw={(g, w, h) => drawGameText(g, 'Start Mining ⛏', w / 2, h / 2, h * 0.42, '#6bff3a')}
+      />
       <Block pos={[0, 6, 0]} size={[15, 5.4, 0.5]} color="#6b5fb0" />
       <CanvasSign
         position={[0, 6, 0.27]}
