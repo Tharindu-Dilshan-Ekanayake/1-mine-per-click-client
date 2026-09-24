@@ -45,17 +45,32 @@ function fallbackMotion(delta) {
  * whole thing re-assembles when `onAvatarChanged` / `onProportionsChanged` fire, so
  * changing cosmetics in the Bloxity portal updates the character live.
  *
- * @param {{ onReady?: () => void, targetHeight?: number }} props
+ * @param {{ onReady?: () => void, targetHeight?: number, equipped?: object|null,
+ *           proportions?: object, reportLoading?: boolean, onRig?: (rig: object) => void }} props
+ *   `equipped` / `proportions` override the local session's, for drawing other
+ *   players; `reportLoading: false` keeps them off the loading screen.
  *   `targetHeight` is the world-space height to fit the avatar into, in the game's
  *   own units. Bloxity authors the rig ~6.4 units tall with the feet at y=0, which is
  *   far bigger than a metric-scale physics capsule, so the model is measured and
  *   rescaled rather than trusted at native size.
  */
 export const PlayerAvatar = forwardRef(function PlayerAvatar(
-  { onReady, targetHeight = 1.8, motionRef, ...props },
+  {
+    onReady,
+    targetHeight = 1.8,
+    motionRef,
+    equipped: equippedOverride,
+    proportions: proportionsOverride,
+    reportLoading = true,
+    onRig,
+    ...props
+  },
   ref,
 ) {
-  const { avatar: equipped, proportions, game } = useBloxity()
+  const { avatar: ownEquipped, proportions: ownProportions, game } = useBloxity()
+  // Other players pass their own cosmetics in; the local player uses the session's.
+  const equipped = equippedOverride !== undefined ? equippedOverride : ownEquipped
+  const proportions = proportionsOverride || ownProportions
   const { scene: baseScene } = useGLTF(BASE_BODY_URL)
   const [assembled, setAssembled] = useState(false)
 
@@ -101,7 +116,7 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
     // hat/back can be removed rather than stacking up.
     const attached = []
 
-    game.loadingStep('Loading avatar…')
+    if (reportLoading) game.loadingStep('Loading avatar…')
 
     const jobs = []
 
@@ -183,7 +198,12 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
         object.traverse((child) => child.geometry?.dispose())
       }
     }
-  }, [rig, equipped, game])
+  }, [rig, equipped, game, reportLoading])
+
+  // Lets the owner find bones (e.g. the shoulder a pickaxe hangs from).
+  useEffect(() => {
+    onRig?.(rig)
+  }, [rig, onRig])
 
   // --- Proportions -------------------------------------------------------------
   // Applied per frame rather than in an effect: every bone is reset to its rest pose

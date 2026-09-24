@@ -1,0 +1,78 @@
+# Builds the game client and uploads it to Bloxity frontend hosting.
+#   push to `dev`  -> https://<gameId>.dev.play.bloxity.io (talks to the dev server)
+#   push to `main` -> https://<gameId>.play.bloxity.io     (joins via the matchmaker)
+#
+# One-time setup in this repo's Settings -> Secrets and variables -> Actions:
+#   Secret    LEGION_DEPLOY_TOKEN  your deploy token from My Games (same as the server's)
+#   Variable  BLOXITY_GAME_ID      your game id, e.g. mine-per-click
+#   Variable  GAME_SLUG            (optional) Bloxity SDK game slug, defaults to the game id
+
+name: Deploy client
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-client-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      GAME_ID: ${{ vars.BLOXITY_GAME_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check setup
+        env:
+          TOKEN: ${{ secrets.LEGION_DEPLOY_TOKEN }}
+        run: |
+          [ -n "$GAME_ID" ] || { echo "::error::Set the BLOXITY_GAME_ID repository variable"; exit 1; }
+          [ -n "$TOKEN" ] || { echo "::error::Set the LEGION_DEPLOY_TOKEN repository secret"; exit 1; }
+
+      - name: Pick channel and server address
+        id: meta
+        run: |
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            echo "channel=prod" >> "$GITHUB_OUTPUT"
+            # Production joins through the matchmaker (fills a pod, then starts the next).
+            echo "server_url=" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=dev" >> "$GITHUB_OUTPUT"
+            # Playtest builds talk straight to the dev backend.
+            echo "server_url=https://$GAME_ID.dev.host.bloxity.io" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        env:
+          VITE_BLOXITY_GAME_ID: ${{ vars.BLOXITY_GAME_ID }}
+          VITE_SERVER_URL: ${{ steps.meta.outputs.server_url }}
+          VITE_GAME_SLUG: ${{ vars.GAME_SLUG || vars.BLOXITY_GAME_ID }}
+          VITE_BLOXITY_PORTAL_URL: https://bloxity.io
+          VITE_BLOXITY_API_URL: https://api.bloxity.io
+        run: npm run build
+
+      - name: Upload to Bloxity hosting
+        env:
+          LEGION_DEPLOY_TOKEN: ${{ secrets.LEGION_DEPLOY_TOKEN }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+        run: |
+          (cd dist && zip -qr ../build.zip .)
+          curl -sS --fail-with-body -X POST \
+            "https://api.bloxity.io/v1/hosting/games/$GAME_ID/frontend?channel=$CHANNEL&version=$GITHUB_SHA" \
+            -H "Authorization: Bearer $LEGION_DEPLOY_TOKEN" \
+            -H "Content-Type: application/zip" \
+            --data-binary @build.zip

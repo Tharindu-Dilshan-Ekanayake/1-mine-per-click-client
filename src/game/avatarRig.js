@@ -55,6 +55,12 @@ export function collectRig(root) {
     if (node.isSkinnedMesh) {
       node.castShadow = true
       node.receiveShadow = true
+      // three.js computes a SkinnedMesh's bounding sphere once, lazily, from the
+      // pose at that moment. If that happens before the rig is posed (or while the
+      // part geometry is being swapped), the sphere is wrong and the body gets
+      // culled at some camera angles - the "invisible player, floating pickaxe"
+      // bug. With at most 8 characters, skipping culling costs nothing.
+      node.frustumCulled = false
       rig.skinnedMeshes.push(node)
       if (!rig.skeleton) rig.skeleton = node.skeleton
 
@@ -334,7 +340,64 @@ const sway = (rig, name, angle) => rotateBone(rig, name, 'axisZ', angle)
  */
 export function animateRig(rig, motion) {
   if (!rig?.skeleton || !motion) return
+  if (motion.dance) {
+    poseDance(rig, motion.time || 0)
+    return
+  }
+  poseBody(rig, motion)
+  poseHeldTool(rig, motion)
+}
 
+/**
+ * A looping victory dance for the leaderboard champions: a bouncy two-step
+ * with arms pumping overhead, and every few bars a spin-ready arm wave.
+ */
+function poseDance(rig, time) {
+  const beat = time * Math.PI * 2 * 1.1 // ~130 bpm half-time
+  const bounce = Math.abs(Math.sin(beat))
+  const side = Math.sin(beat / 2)
+  const wave = Math.floor(time / 3.5) % 2 === 1
+
+  rig.root.position.y = rig.rootRestY + bounce * 0.25
+  // Hips sway, knees dip on each beat.
+  sway(rig, 'Spine1', side * 0.18)
+  swing(rig, 'Spine1', -0.08 * bounce)
+  swing(rig, 'LegL1', -0.35 * Math.max(0, side))
+  swing(rig, 'LegL2', 0.7 * Math.max(0, side))
+  swing(rig, 'LegR1', -0.35 * Math.max(0, -side))
+  swing(rig, 'LegR2', 0.7 * Math.max(0, -side))
+
+  if (wave) {
+    // Both arms up, waving side to side.
+    swing(rig, 'ArmL1', -2.8)
+    swing(rig, 'ArmR1', -2.8)
+    sway(rig, 'ArmL1', -0.3 + side * 0.35)
+    sway(rig, 'ArmR1', 0.3 + side * 0.35)
+  } else {
+    // Alternate fist pumps.
+    swing(rig, 'ArmL1', -1.2 - 1.6 * Math.max(0, Math.sin(beat)))
+    swing(rig, 'ArmR1', -1.2 - 1.6 * Math.max(0, -Math.sin(beat)))
+    swing(rig, 'ArmL2', -0.9)
+    swing(rig, 'ArmR2', -0.9)
+  }
+  swing(rig, 'Neck1', 0.12 * bounce)
+}
+
+/**
+ * Overrides the right arm while holding a tool. `motion.armAngle` is the forward
+ * swing in radians (negative raises the arm in front / overhead), driven by the
+ * pickaxe swing in Character.
+ */
+function poseHeldTool(rig, motion) {
+  if (motion.armAngle === undefined || motion.armAngle === null) return
+  for (const name of ['ArmR1', 'ArmR2']) {
+    const entry = rig.bones[name]
+    if (entry) entry.bone.quaternion.copy(entry.origQuat)
+  }
+  swing(rig, 'ArmR1', motion.armAngle)
+}
+
+function poseBody(rig, motion) {
   const { time = 0, speed = 0, grounded = true, maxSpeed = 6 } = motion
   const ratio = Math.min(speed / Math.max(maxSpeed, 0.001), 1)
 
