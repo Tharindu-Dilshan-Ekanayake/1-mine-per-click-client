@@ -1,16 +1,33 @@
-# React + Vite
+# 1 Mine Per Click — game client
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + three.js (react-three-fiber) client for the Colyseus server in
+`../-1-mine-per-click-server`.
 
-Currently, two official plugins are available:
+```bash
+npm install
+npm run dev      # http://localhost:5173, joins the server on port 2567
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Copy `.env.example` to `.env.local` for the Bloxity SDK settings.
 
-## React Compiler
+## Graphics quality
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+There is no settings menu: `src/game/quality.js` picks a starting tier from the
+GPU, CPU cores and memory, and a frame-rate monitor in the scene steps it down
+(lower resolution, no shadows, no sparkles) when the game stutters and back up
+when there's headroom.
 
-## Expanding the ESLint configuration
+## Deploying to Bloxity hosting
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+`.github/workflows/deploy.yml` builds the site and uploads it: `dev` branch →
+`https://<gameId>.dev.play.bloxity.io` (talks straight to the dev server),
+`main` → `https://<gameId>.play.bloxity.io` (joins through the Legion
+matchmaker, which fills a server pod and then starts the next).
+
+One-time setup (repo → Settings → Secrets and variables → Actions):
+
+| Kind     | Name                   | Value                                          |
+| -------- | ---------------------- | ---------------------------------------------- |
+| Secret   | `LEGION_DEPLOY_TOKEN`  | deploy token from My Games (same as server's)  |
+| Variable | `BLOXITY_GAME_ID`      | your lowercase game id, e.g. `mine-per-click`  |
+| Variable | `GAME_SLUG` (optional) | Bloxity SDK slug, if different from the game id |

@@ -1,12 +1,26 @@
-import { Environment } from '@react-three/drei'
+import { Environment, Lightformer, PerformanceMonitor } from '@react-three/drei'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { Physics } from '@react-three/rapier'
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
 import { useBloxity } from '../bloxity/BloxityContext'
+import { useGame } from '../net/gameStore'
+import { SPAWN } from '../shared/gameConfig'
+// Explicit extension: this folder once had a lowercase effects.js, and on Windows a
+// dev server's cached, case-insensitive lookup could still resolve ./Effects to it.
+import Effects from './Effects.jsx'
 import FollowCamera from './FollowCamera'
-import Ground from './Ground'
+import Items from './Items'
+import { localPlayer } from './localPlayer'
 import Player from './Player'
+import { START_ANTIALIAS, TIERS, useQuality } from './quality'
+import RemotePlayers from './RemotePlayers'
+import Champions from './world/Champions'
+import Mine from './world/Mine'
+import GuidePath from './world/GuidePath'
+import Stalls from './world/Stalls'
+import Surface from './world/Surface'
+import Training from './world/Training'
 
 /**
  * Fires `onFirstFrame` after the renderer has actually drawn once.
@@ -22,18 +36,111 @@ function FirstFrameSignal({ onFirstFrame }) {
   return null
 }
 
+/**
+ * Directional light that follows the player, so a small, sharp shadow map covers
+ * wherever they are instead of one blurry map stretched over the whole world.
+ */
+function Sun() {
+  const lightRef = useRef()
+  const tier = useQuality((s) => TIERS[s.tier])
+  // Shadows follow the quality tier; a new map size needs a fresh shadow map.
+  useEffect(() => {
+    const light = lightRef.current
+    if (!light) return
+    light.castShadow = tier.shadows
+    light.shadow.mapSize.set(tier.shadowSize, tier.shadowSize)
+    // Drop the old map; three.js rebuilds it at the new size on the next frame.
+    light.shadow.map?.dispose()
+    light.shadow.map = null
+  }, [tier])
+  useFrame(() => {
+    const light = lightRef.current
+    if (!light) return
+    const p = localPlayer.pos
+    light.position.set(p.x + 18, p.y + 40, p.z + 14)
+    light.target.position.set(p.x, p.y, p.z)
+    light.target.updateMatrixWorld()
+  })
+  return (
+    <directionalLight
+      ref={lightRef}
+      castShadow={tier.shadows}
+      intensity={2.2}
+      color="#fff6e5"
+      shadow-mapSize={[tier.shadowSize, tier.shadowSize]}
+      shadow-camera-left={-35}
+      shadow-camera-right={35}
+      shadow-camera-top={35}
+      shadow-camera-bottom={-35}
+      shadow-camera-near={1}
+      shadow-camera-far={120}
+      shadow-bias={-0.0004}
+    />
+  )
+}
+
+/** Longest the loading screen waits for the player's SDK avatar. */
+const AVATAR_WAIT_MS = 20000
+
+/** Stable reference: RigidBody re-applies `position` whenever the prop changes. */
+const PLAYER_START = [SPAWN.x, SPAWN.y + 1, SPAWN.z]
+
+/** The world only mounts after we've joined a lobby, so it builds from real state. */
+function World({ playerBodyRef, onAvatarReady }) {
+  const connected = useGame((s) => s.status === 'connected' && Boolean(s.me))
+  return (
+    <>
+      <Surface />
+      <Stalls />
+      <Training />
+      <Champions />
+      <Mine />
+      <Effects />
+      <GuidePath />
+      {connected && (
+        <>
+          <Items />
+          <RemotePlayers />
+        </>
+      )}
+      <Player
+        bodyRef={playerBodyRef}
+        position={PLAYER_START}
+        onAvatarReady={onAvatarReady}
+      />
+    </>
+  )
+}
+
+/**
+ * Watches the frame rate and moves the quality tier: down when the game stutters,
+ * back up when there's headroom. After a few flip-flops it settles for good.
+ */
+function AutoQuality() {
+  const { lower, raise, settle } = useQuality.getState()
+  const settled = useQuality((s) => s.settled)
+  if (settled) return null
+  return <PerformanceMonitor onDecline={lower} onIncline={raise} flipflops={4} onFallback={settle} />
+}
+
 export function GameScene() {
   const { game } = useBloxity()
+  const tier = useQuality((s) => TIERS[s.tier])
+  const dpr = Math.min(window.devicePixelRatio || 1, tier.dpr)
   const playerBodyRef = useRef(null)
 
   const [avatarReady, setAvatarReady] = useState(false)
   const loadingEnded = useRef(false)
 
-  const handleAvatarReady = useCallback(() => setAvatarReady(true), [])
+  const handleAvatarReady = useCallback(() => {
+    setAvatarReady(true)
+    useGame.setState({ avatarReady: true })
+  }, [])
 
   // Only end the loading screen once the avatar has finished assembling *and* a
   // frame has rendered with it in place.
   const handleFirstFrame = useCallback(() => {
+    useGame.setState({ sceneReady: true })
     if (loadingEnded.current || !avatarReady) return
     loadingEnded.current = true
     game.loadingEnd()
@@ -51,34 +158,45 @@ export function GameScene() {
     game.loadingStep('Preparing scene…')
   }, [game])
 
+  // The SDK avatar CDN can be very slow: don't hold the loading screen forever.
+  useEffect(() => {
+    const t = setTimeout(handleAvatarReady, AVATAR_WAIT_MS)
+    return () => clearTimeout(t)
+  }, [handleAvatarReady])
+
   return (
     <Canvas
       shadows
-      camera={{ position: [0, 5, 10], fov: 60 }}
-      onCreated={({ gl }) => gl.setClearColor('#87ceeb')}
+      dpr={dpr}
+      gl={{ antialias: START_ANTIALIAS, powerPreference: 'high-performance' }}
+      // near 0.2 (not 0.1) doubles depth precision at range, which is what
+      // keeps thin decals and floors from z-fighting far from the camera.
+      camera={{ position: [0, 5, 22], fov: 60, near: 0.2, far: 600 }}
+      onCreated={({ gl }) => gl.setClearColor('#7fd3ff')}
     >
-      <hemisphereLight args={['#bfe3ff', '#3f5d3f', 0.8]} />
-      <directionalLight
-        castShadow
-        position={[10, 20, 10]}
-        intensity={1.8}
-        shadow-mapSize={[2048, 2048]}
-      />
+      <fog attach="fog" args={['#9fdcff', 90, 260]} />
+      <hemisphereLight args={['#dff2ff', '#7a6a55', 1.0]} />
+      <ambientLight intensity={0.2} />
+      <Sun />
+      {/* Reflections for gems and metal, built locally from light panels (no HDR download). */}
+      <Environment resolution={128} environmentIntensity={0.45}>
+        <color attach="background" args={['#8fd0ff']} />
+        <Lightformer form="rect" intensity={4} position={[0, 12, 0]} rotation-x={Math.PI / 2} scale={[24, 24, 1]} />
+        <Lightformer form="rect" intensity={2.5} color="#ffe9c4" position={[12, 4, 6]} rotation-y={-Math.PI / 2} scale={[12, 4, 1]} />
+        <Lightformer form="rect" intensity={2} color="#c8e6ff" position={[-12, 3, -6]} rotation-y={Math.PI / 2} scale={[12, 4, 1]} />
+        <Lightformer form="ring" intensity={3} position={[0, 3, 12]} scale={4} />
+      </Environment>
 
       <Suspense fallback={null}>
-        <Environment preset="city" />
-        <Physics gravity={[0, -18, 0]}>
-          <Ground />
-          <Player
-            bodyRef={playerBodyRef}
-            position={[0, 3, 8]}
-            onAvatarReady={handleAvatarReady}
-          />
+        <Physics gravity={[0, -24, 0]}>
+          <World playerBodyRef={playerBodyRef} onAvatarReady={handleAvatarReady} />
+          {/* Inside Physics: it raycasts against the world to avoid walls. */}
+          <FollowCamera bodyRef={playerBodyRef} />
         </Physics>
       </Suspense>
 
-      <FollowCamera bodyRef={playerBodyRef} />
       <FirstFrameSignal onFirstFrame={handleFirstFrame} />
+      <AutoQuality />
     </Canvas>
   )
 }
